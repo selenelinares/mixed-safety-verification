@@ -1,0 +1,12 @@
+-Q . memsafe
+-arg "-w -ambiguous-paths"
+-arg "-w -notation-overridden"
+theories/syntax.v
+theories/semantics.v
+theories/separation_logic_def.v
+theories/frame_conds_def.v
+theories/nominal_extension.v
+theories/nominal_proj_extension.v
+theories/lang_properties.v
+theories/separation_logic.v
+theories/frame_conditions.v
