@@ -1,47 +1,61 @@
-Getting the Uniqueness as Separation project compiled. On the terminal: 
+## Compiling the Mixed-Safety Verification project. 
 
-1. Create a new switch called coq8-11-2 with the following ocaml compatible version.
-	opam switch create coq8-11-2 4.07.1
 
-2. Update environment
-	eval $(opam env)
+Before starting, make sure opam is installed:
+	`opam --version`
 
-3. Install Coq 8.11.2 and set the switch
-	opam pin add coq 8.11.2
+If opam has not been initialise on your system, run:
+	`opam init`
 
-4. Add repo
-	opam repo add coq-released https://coq.inria.fr/opam/released
+and update the shell environment with:
+	`eval $(opam env)`
 
-5. Install ssreflect  1.12.0  (CoqUtils dependency) 
-	opam install coq-mathcomp-ssreflect.1.12.0
+Then follow these steps on the terminal:
+ 
+1. Create a directory (e.g mixed-safety-ws) for the project files and move into it:
+	`mkdir mixed-safety-ws`
+	`cd mixed-safety-ws`
 
-6. Install fingroup 1.12.0  (CoqUtils dependency)
-	opam install coq-mathcomp-fingroup.1.12.0
+2. Create a new opam switch named coq8-11-2 with Ocaml version 4.10.2:
+	`opam switch create coq8-11-2 4.10.2`
 
-7. Install algebra 1.12.0  (CoqUtils dependency)
-	opam install coq-mathcomp-algebra.1.12.0
+3. Activate the switch in the current environment:
+	`eval $(opam env --switch=coq8-11-2)`
 
-8. Install deriving - Download repo from https://github.com/arthuraa/deriving
-	make
-	make install
+4. Install and pin Coq version 8.11.2
+	`opam pin add coq 8.11.2`
 
-9. Install extructures
-	opam repo add coq-extra-dev https://coq.inria.fr/opam/extra-dev
-	opam install coq-deriving
-	opam install coq-extructures.0.3.0
+5. Add the Coq release packages repository:
+	`opam repo add coq-released https://coq.inria.fr/opam/released`
+
+   Add the extra development repository:
+	`opam repo add coq-extra-dev https://coq.inria.fr/opam/extra-dev`
+
+6. Install Mathcomp dependencies ssreflect version 1.12.0, fingroup 1.12.0 and algebra 1.12.0 (CoqUtils dependencies): 
+	`opam install coq-mathcomp-ssreflect.1.12.0`
+	`opam install coq-mathcomp-fingroup.1.12.0`
+	`opam install coq-mathcomp-algebra.1.12.0`
+
+7. Install aditional dependencies deriving and extructures:
+	`opam install coq-deriving.0.1.1`
+	`opam install coq-extructures.0.3.0`
 	
+8. Install Coq-utils:
+	`git clone https://github.com/arthuraa/coq-utils.git`
+	`cd coq-utils`
+	`make`
+	`make install`
 
-	Note: Deriving & extructures can also be installed in the following way 
-	Download from https://github.com/arthuraa/extructures 
-	make
-	make install
+9. Return to the parent directory:
+	`cd ..`
 
-10. Install Coq-utils from https://github.com/arthuraa/coq-utils
-	make
-	make install
-
-11. Go to the Artifact folder and do
-	make
+10. Download and compile the project:
+	`git clone https://github.com/selenelinares/mixed-safety-verification`
+	`cd mixed-safety-verification`
+	`make`
 
 
-The instructions were tested in MacOS Sequoia 15.5 and Linux Mint 20.2 Cinnamon (Kernel 5.13.0-21-generic).
+These instructions were tested on: 
+- MacOS Sequoia 15.5 on Apple M1 pro
+- MacOS Tahoe 26.3.1 on Apple M5 and 
+- Linux Mint 20.2 Cinnamon (Kernel 5.13.0-21-generic).
