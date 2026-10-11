@@ -375,6 +375,20 @@ case cv : v => [b|i| p sz|].
     exact Q_v.
 Qed.
 
+Corollary frame_cond_free_no_ptr: 
+  forall e wi wo, 
+  exp_triple
+    (lift_sc_seq_ptr_in_heap wi)
+    e
+    (fun v => forall p sz, v <> VPtr p sz)
+  -> frame_conds_as_triple (Free e) wi wo.
+Proof.
+move => e wi wo expr_triple s [|k] vars_in_store precond /=;
+  first exact I.
+case ev_e : (eval_expr true e s.1) => [b|n|p sz|] //.
+exfalso.
+exact (expr_triple s precond (VPtr p sz) ev_e p sz erefl).
+Qed.
 
 Corollary frame_cond_free_wi_wo: 
   forall e wi wo, 
@@ -387,156 +401,48 @@ Corollary frame_cond_free_wi_wo:
           /\ fdisjoint (names (fset1 p)) (names (wi :\ p)))
   -> frame_conds_as_triple (Free e) wi wo.
 Proof.
-(* move => e wi wo expr_triple.
-apply (consequence_rule 
-  (AQ := names wo)
-  (P := separating_conjunction 
-    (fun s => exists p n, eval_expr true e s.1 = VPtr p n
-    /\ singleton p s)
-    (lift_sc_seq_ptr_in_heap wo))
-  (Q := empty_heap * lift_sc_seq_ptr_in_heap wo)).
-  * apply finsupp_sep_conj0l.
-  * apply (mem_frame_rule_simpl finsupp_empty_heap).
-       -- apply free_rule_simp.
-       -- unfold mod_vars_c.
-          apply ind_vars_fset0.
-       -- move => s1 s2 H postc.
-          destruct H as [p [n [eval_e singleton_s1]]].
-          specialize (expr_triple s1).
-          simpl in expr_triple.
-          have H : (exists p : ptr, singleton p s1) .
-          exists p.
-          exact singleton_s1.
-          specialize (expr_triple H (VPtr p n) eval_e).
-          destruct expr_triple as [p0 [sz [ptr_eq [p_in_wi [wo_eq names_disj]]]]].
-          unfold singleton in singleton_s1.
-          rewrite singleton_s1.
-          apply domm_sepconj_s in postc.
-          rewrite postc.
-          rewrite wo_eq.
-          injection ptr_eq.
-          move => n_eq p_eq.
-          rewrite p_eq.
-          exact names_disj.
-      -- move => s1 s2 emptys1 postc.
-         unfold empty_heap in emptys1.
-         rewrite emptys1.
-         rewrite namesfs0.
-         apply fdisjoint0s.
-  * move => s precond.
-    specialize (expr_triple (s.1,name_avoiding_submap s.2 (names (wo :\: wi )))).
-    simpl in expr_triple.
-    assert (H := (exists p : ptr,
-    singleton p
-      (s.1, name_avoiding_submap s.2 (names (wo :\: wi))))).
-
-
-    unfold separating_conjunction.
-    case c_e: (eval_expr true e s.1) => [b|||].
-    specialize (expr_triple (VBool b) c_e).
-    discriminate expr_triple.
-
-    specialize (expr_triple p n).
-    have H2: VPtr p n = VPtr p n.
-    reflexivity.
-    specialize (expr_triple H2).
-    destruct expr_triple as [p_in_w1 [wo_eq_diff names_disj]].
-    exists s.1 (setm emptym k).         
-
-       
-
-          
-          admit.
-    * move => s conj_star.
-      destruct conj_star as [dommh_wi H1].
-      rewrite <- fsubset_dom_impl_precond in dommh_wi.
-      destruct H1 as [p [n [eval_e [p_in_wi [wo_eq disj_names_p_wi]]]]].
-      unfold separating_conjunction.
-      exists s.1.
-      rewrite <- dommh_wi in p_in_wi.
-      move /dommP in p_in_wi.
-      destruct p_in_wi as [v p_in_wi].
-      exists (singletonm p v).
-      exists (remm s.2 p).
-      split.
-      ** rewrite (surjective_pairing s).
-         apply injective_projections.
-         simpl; reflexivity.
-         simpl.
-         apply/eq_fmap=> k.
-         rewrite unionmE.
-         case ck : (k == p).
-           unfold singletonm.
-           rewrite setmE ck.
-           simpl.
-           move /eqP in ck. 
-           rewrite ck.
-           exact p_in_wi.
-           unfold singletonm.
-           rewrite setmE ck emptymE.
-           simpl.
-           rewrite remmE ck.
-           reflexivity. 
-      ** simpl.
-         move => p0 n0 H5.
-         rewrite eval_e in H5.
-         injection H5.
-         move => n_n0 p_p0. 
-         unfold singleton.
-         simpl.
-         unfold singletonm.
-         rewrite p_p0 domm_set domm0 fsetU0.
-         reflexivity.
-      ** apply fsubset_dom_impl_precond.
-         simpl.
-         rewrite domm_rem dommh_wi wo_eq.
-         reflexivity.
-      ** rewrite domm_rem.
-         unfold singletonm.
-         rewrite domm_set domm0 fsetU0 dommh_wi.
-         admit. (* exact disj_names_p_wi. *)
-    * by auto.
-  + apply (mem_frame_rule finsupp_empty_heap).
-    apply free_rule.
-    unfold mod_vars_c.
-    apply ind_vars_fset0.
- ++ admit.
- ++ admit.
-- move => s H.
-  destruct H as [H eval_e].
-  apply (ptr_match (eval_expr true e s.1)) in eval_e.
-  destruct eval_e as [eval_e_r | eval_e_l].
-  + left.
-    split.
-    exact H.
-    exact eval_e_r.
-  + right.
-    unfold separating_conjunction.
-    exists s.1.
-    exists emptym.
-    exists s.2.
-    destruct eval_e_l as [eval_e_l eq_wo_wi].
-    split.
-    * rewrite union0m.
-      apply surjective_pairing.
-    * simpl.
-      move => p n contr.
-      specialize (eval_e_l p n).
-      rewrite contr in (eval_e_l).
-      exfalso.
-      apply eval_e_l.
-      reflexivity.
-    * rewrite eq_wo_wi.
-      rewrite <- surjective_pairing.
-      exact H.
-    * rewrite domm0.
-      (* rewrite namesfs0. *)
-      by rewrite fdisjoint0s.
-- move => s sc_empty.
-  apply (sep_conj0l s (lift_sc_seq_ptr_in_heap wo))in sc_empty.
-  exact sc_empty.
-Qed. *)
-Admitted.
+move => e wi wo expr_triple s [|k] vars_in_store precond /=;
+  first exact I.
+case ev_e : (eval_expr true e s.1) => [b|n|p sz|] //.
+(* Expression evaluation is unchanged when we replace the heap. *)
+have singleton_s : exists q, singleton q
+    (s.1, setm emptym p VNil).
+  exists p.
+  by rewrite /singleton /= domm_set domm0 fsetU0.
+have [q [sz' [ptr_eq [p_in_wi [wo_eq names_disj]]]]] :=
+  expr_triple _ singleton_s _ ev_e.
+injection ptr_eq => sz_eq p_eq.
+subst q.
+have dom_s : domm s.2 = wi := domm_sepconj_s precond.
+case offset_zero : (p.2 == 0) => //.
+have block_live : p.1 \in domm (currym s.2).
+  rewrite domm_curry dom_s.
+  exact (mem_imfset fst p_in_wi).
+rewrite block_live.
+move => A supported_post.
+apply pbindrE0.
+apply fsubset_dom_impl_precond.
+rewrite /= domm_filter_eq dom_s wo_eq.
+apply/eq_fset => q.
+rewrite in_fset_filter in_fsetD in_fset1.
+case q_in_wi : (q \in wi); last by rewrite !andbF.
+rewrite !andbT.
+apply bool_ext.
+- move => different_blocks.
+  apply/negP => /eqP same_ptr.
+  by subst q; rewrite eqxx in different_blocks.
+- move => different_ptrs.
+  apply/negP => /eqP same_block.
+  have q_in_rest : q \in wi :\ p.
+    by rewrite in_fsetD in_fset1 different_ptrs q_in_wi.
+  have p_name : p.1 \in names (fset1 p).
+    apply ptr_namesin_in.
+    by rewrite in_fset1.
+  have not_in_rest := (fdisjointP names_disj) _ p_name.
+  have in_rest := ptr_namesin_in q_in_rest.
+  rewrite same_block in in_rest.
+  by rewrite in_rest in not_in_rest.
+Qed.
 
 Lemma frame_conds_if_then_else:
   forall wi wo_t wo_f e b ct cf, 
