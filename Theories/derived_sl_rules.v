@@ -194,6 +194,155 @@ Section Derived_rules.
 
 (*Triple discharge for each command*)
 
+(* Allocation introduces a fresh name, so its output footprint cannot be
+   fixed in advance as in frame_conds_as_triple. Keep the fresh name
+   existentially bound, together with the pointer returned in x. The block
+   footprint is {(i, 0), ..., (i, sz - 1)} (empty when sz = 0). *)
+Definition allocation_post x sz (wi : {fset ptr}) (s : state) : Prop :=
+  exists i,
+    i \notin names wi /\
+    s.1 x = Some (VPtr (i, (0 : int)) (Posz sz)) /\
+    lift_sc_seq_ptr_in_heap
+      (wi :|: domm (mkblock i (nseq sz (VNum 0)))) s /\
+    forall j, j < sz -> s.2 (i, Posz j) = Some (VNum 0).
+
+(* Needed when this existential postcondition is the intermediate assertion
+   of the sequencing rule. *)
+Lemma allocation_post_finsupp x sz wi :
+  {finsupp (names wi) allocation_post x sz wi}.
+Proof.
+have transport pi : finsupp_perm (names wi) pi ->
+    forall s t, nomR pi s t ->
+    allocation_post x sz wi s -> allocation_post x sz wi t.
+  move => fixed s t renamed [i [fresh [stored [footprint initialized]]]].
+  exists (rename pi i).
+  split.
+  - have H : nomR pi (is_true (i \notin names wi))
+        (is_true (rename pi i \notin names wi)) by finsupp.
+    exact (proj1 H fresh).
+  split.
+  - have H : nomR pi
+        (s.1 x = Some (VPtr (i, (0 : int)) (Posz sz)))
+        (t.1 x = Some (VPtr (rename pi i, (0 : int)) (Posz sz)))
+      by finsupp.
+    exact (proj1 H stored).
+  split.
+  - apply fsubset_dom_impl_precond.
+    have H : nomR pi
+        (domm s.2 = wi :|: domm (mkblock i (nseq sz (VNum 0))))
+        (domm t.2 = wi :|: domm (mkblock (rename pi i) (nseq sz (VNum 0))))
+      by finsupp.
+    apply (proj1 H).
+    exact (domm_sepconj_s footprint).
+  - move => j j_lt_sz.
+    have H : nomR pi
+        (s.2 (i, Posz j) = Some (VNum 0))
+        (t.2 (rename pi i, Posz j) = Some (VNum 0)) by finsupp.
+    exact (proj1 H (initialized j j_lt_sz)).
+move => pi fixed s t renamed; split.
+- exact (transport pi fixed s t renamed).
+- apply (transport (pi^-1)%fperm (finsupp_perm_inv fixed) t s).
+  change (rename (pi^-1)%fperm t = s).
+  by rewrite -renamed renameK.
+Qed.
+
+Lemma frame_conds_alloc x e sz wi :
+  exp_triple (lift_sc_seq_ptr_in_heap wi) e
+    (fun v => v = VNum (Posz sz)) ->
+  mem_safe_triple
+    (lift_sc_seq_ptr_in_heap wi)
+    (Alloc x e)
+    (allocation_post x sz wi)
+    mem_safety_errors.
+Proof.
+move => expr_triple s [|k] vars_in_store precond /=;
+  first exact I.
+have eval_size := expr_triple s precond _ erefl.
+rewrite eval_size.
+move => A supported_post.
+apply pbindr_new.
+- exact supported_post.
+- finsupp.
+- move => i fresh_A fresh_s.
+  apply pbindrE0.
+  exists i.
+  have dom_s : domm s.2 = wi := domm_sepconj_s precond.
+  have names_wi_sub : fsubset (names wi) (names s).
+    rewrite -dom_s namespE namesmE.
+    exact (fsubset_trans (fsubsetUl _ _) (fsubsetUr _ _)).
+  split.
+  + apply/negP => i_in_wi.
+    have i_in_s := (fsubsetP names_wi_sub) _ i_in_wi.
+    by rewrite i_in_s in fresh_s.
+  split.
+  + by rewrite /= setmE eqxx.
+  split.
+  + apply fsubset_dom_impl_precond.
+    by rewrite /= domm_union dom_s fsetUC.
+  + move => j j_lt_sz.
+    by rewrite /= unionmE mkblockE /= eqxx size_nseq j_lt_sz
+      /= nth_nseq j_lt_sz.
+Qed.
+
+(* Local-store facts, such as alias relationships, must survive between
+   commands. These variants retain them alongside the exact footprint. *)
+Definition footprint_locals (w : {fset ptr}) (L : locals -> Prop) s :=
+  L s.1 /\ lift_sc_seq_ptr_in_heap w s.
+
+Lemma frame_conds_assn_local wi (L L' : locals -> Prop) x e :
+  (forall ls, L ls -> L' (setm ls x (eval_expr true e ls))) ->
+  mem_safe_triple (footprint_locals wi L) (Assn x e)
+    (footprint_locals wi L') mem_safety_errors.
+Proof.
+move => update s [|k] vars_in_store [local_facts footprint] /=;
+  first exact I.
+move => A supported_post; apply pbindrE0; split.
+- exact (update _ local_facts).
+- apply fsubset_dom_impl_precond.
+  exact (domm_sepconj_s footprint).
+Qed.
+
+Lemma frame_conds_store_local wi L e e' :
+  exp_triple (footprint_locals wi L) e
+    (fun v => forall p sz, v = VPtr p sz -> p \in wi) ->
+  mem_safe_triple (footprint_locals wi L) (Store e e')
+    (footprint_locals wi L) mem_safety_errors.
+Proof.
+move => address s [|k] vars_in_store precond /=; first exact I.
+case ev_e : (eval_expr true e s.1) => [b|n|p sz|] //.
+have p_in_wi := address s precond _ ev_e p sz erefl.
+case: precond => local_facts footprint.
+have dom_s : domm s.2 = wi := domm_sepconj_s footprint.
+have p_in_heap : p \in domm s.2 by rewrite dom_s.
+have [v lookup] := (dommP p_in_heap).
+rewrite /updm lookup /=.
+move => A supported_post; apply pbindrE0; split => //.
+apply fsubset_dom_impl_precond.
+by rewrite /= domm_setm_eq.
+Qed.
+
+Lemma frame_conds_load_local wi (L L' : locals -> Prop) x e :
+  exp_triple (footprint_locals wi L) e
+    (fun v => forall p sz, v = VPtr p sz -> p \in wi) ->
+  (forall ls v, L ls -> L' (setm ls x v)) ->
+  mem_safe_triple (footprint_locals wi L) (Load x e)
+    (footprint_locals wi L') mem_safety_errors.
+Proof.
+move => address update s [|k] vars_in_store precond /=;
+  first exact I.
+case ev_e : (eval_expr true e s.1) => [b|n|p sz|] //.
+have p_in_wi := address s precond _ ev_e p sz erefl.
+case: precond => local_facts footprint.
+have dom_s : domm s.2 = wi := domm_sepconj_s footprint.
+have p_in_heap : p \in domm s.2 by rewrite dom_s.
+have [v lookup] := (dommP p_in_heap).
+rewrite lookup.
+move => A supported_post; apply pbindrE0; split.
+- exact (update _ _ local_facts).
+- apply fsubset_dom_impl_precond.
+  exact dom_s.
+Qed.
+
 Lemma frame_conds_as_triple_skip: 
   forall wi wo, wi = wo -> frame_conds_as_triple Skip wi wo.
 Proof.
