@@ -40,7 +40,7 @@ Definition exp_triple P e (Qv : value -> Prop ) :=
           forall v, eval_expr true e s.1 = v ->
           Qv v.
 
-Definition frame_conds_as_triple_strenghten_pre 
+Definition fc_triple_strenghten_pre 
   c (wi wo : {fset ptr}) (P : state -> Prop) :=
   mem_safe_triple 
     (conj P (lift_sc_seq_ptr_in_heap wi))
@@ -48,7 +48,7 @@ Definition frame_conds_as_triple_strenghten_pre
     (lift_sc_seq_ptr_in_heap wo) 
     mem_safety_errors.
 
-Definition frame_conds_as_triple_weaken_pre 
+Definition fc_triple_weaken_pre 
   c (wi wo : {fset ptr}) (P : state -> Prop) :=
   mem_safe_triple 
     (disj (lift_sc_seq_ptr_in_heap wi) P)
@@ -56,7 +56,7 @@ Definition frame_conds_as_triple_weaken_pre
     (lift_sc_seq_ptr_in_heap wo) 
     mem_safety_errors.
 
-Definition frame_conds_as_triple_strenghen_post 
+Definition fc_triple_strenghen_post 
   c (wi wo : {fset ptr}) (Q : state -> Prop) :=
   mem_safe_triple 
    (lift_sc_seq_ptr_in_heap wi) 
@@ -64,7 +64,7 @@ Definition frame_conds_as_triple_strenghen_post
    (conj (lift_sc_seq_ptr_in_heap wo) Q) 
    mem_safety_errors.
 
-Definition frame_conds_as_triple_weaken_post 
+Definition fc_triple_weaken_post 
   c (wi wo : {fset ptr}) (Q : state -> Prop) :=
   mem_safe_triple 
    (lift_sc_seq_ptr_in_heap wi) 
@@ -72,7 +72,7 @@ Definition frame_conds_as_triple_weaken_post
    (disj (lift_sc_seq_ptr_in_heap wo) Q) 
    mem_safety_errors.
 
-Definition frame_conds_as_triple_pre_post_conj 
+Definition fc_triple_pre_post_conj 
   c (wi wo : {fset ptr}) (P Q:state ->Prop) :=
   mem_safe_triple 
     (conj (lift_sc_seq_ptr_in_heap wi) P) 
@@ -194,8 +194,251 @@ Section Derived_rules.
 
 (*Triple discharge for each command*)
 
+Lemma fc_triple_skip: 
+  forall wi wo, wi = wo -> fc_triple Skip wi wo.
+Proof.
+unfold fc_triple.
+move => wi wo eq_wi_wo.
+rewrite eq_wi_wo.
+apply skip_rule.
+Qed.
+
+Lemma fc_triple_assn: 
+forall wi wo x e,
+  wi = wo
+  -> fc_triple (Assn x e) wi wo.
+Proof.
+move => wi wo x e eq_wiwo.
+unfold fc_triple.
+apply (@consequence_rule (Assn x e) (names wo) (fun s => (lift_sc_seq_ptr_in_heap wi) (setm s.1 x (eval_expr true e s.1), s.2)) (lift_sc_seq_ptr_in_heap wo)).
+- apply Precond_finsupp.
+- rewrite eq_wiwo.
+  apply assn_rule.
+- move => s H.
+  apply (@fc_triple_heap_depd s (setm s.1 x (eval_expr true e s.1), s.2) wi).
+  reflexivity.
+  exact H.
+- auto.
+Qed. 
+
+Lemma frame_conds_load : 
+  forall x e wi wo, wi = wo 
+    -> exp_triple (lift_sc_seq_ptr_in_heap wi) 
+                  e
+                  (fun v => forall p sz, v == VPtr p sz -> p \in wi)
+    -> fc_triple (Load x e) wi wo.
+Proof.
+move => x e wi wo eq_wi_wo expr_triple. 
+unfold fc_triple.
+move => ss k varsc_subset precond.
+unfold exp_triple in expr_triple.
+case ck : k => [|n].
+  - simpl; exact I.
+  - simpl.
+    case ev_e : (eval_expr true e ss.1) => [||p sz|].
+      - by [].
+      - by []. 
+      - specialize (expr_triple ss precond (VPtr p sz) ev_e p sz).
+        specialize (expr_triple (eqxx (VPtr p sz))).
+        assert (domm_ss2_eq := precond).
+        apply domm_sepconj_s in domm_ss2_eq.
+        rewrite <- domm_ss2_eq in expr_triple.
+        rewrite <- eq_wi_wo.
+        rewrite <- domm_ss2_eq.
+        move /dommP in expr_triple.
+        destruct expr_triple.
+        rewrite H.
+        move => A H2.
+        apply pbindrE0.
+        rewrite domm_ss2_eq.
+        apply (@fc_triple_domm_heap_depd ss).
+        by simpl.
+        exact precond.
+      by [].
+Qed.
+
+Lemma frame_cond_store : 
+  forall x e wi wo, wi = wo -> 
+    exp_triple (lift_sc_seq_ptr_in_heap wi) 
+                 x
+               (fun v => forall p sz, v == VPtr p sz -> p \in wi) ->
+    fc_triple (Store x e) wi wo.
+Proof.
+move => x e wi wo eq_wi_wo expr_triple. 
+unfold fc_triple.
+move => ss k varsc_subset precond.
+unfold exp_triple in expr_triple.
+case ck : k => [|n].
+  - simpl; exact I.
+  - simpl.
+    case ev_e : (eval_expr true x ss.1) => [||p sz|].
+      - by [].
+      - by []. 
+      - specialize (expr_triple ss precond (VPtr p sz) ev_e).
+        specialize (expr_triple p sz (eqxx (VPtr p sz))).
+        assert (domm_ss2_eq := precond).
+        apply domm_sepconj_s in domm_ss2_eq.
+        rewrite <- eq_wi_wo.
+        rewrite <- domm_ss2_eq.
+        rewrite <- domm_ss2_eq in expr_triple.
+        move /dommP in expr_triple.
+        destruct expr_triple.
+        unfold updm.
+        rewrite H.
+        simpl.
+        move => A H2.
+        apply pbindrE0.
+        rewrite domm_ss2_eq.
+        apply (@fc_triple_domm_heap_depd ss).
+        simpl.
+        rewrite domm_setm_eq.
+        reflexivity.
+        apply /dommP.
+        exists x0.
+        exact H.
+        exact precond.
+      by [].
+Qed.
+
+Definition singletonm 
+  {T : ordType} (S : Type) (k : T) (v : S) : {fmap T -> S} :=
+  setm emptym k v.
+
+Lemma ptr_match v Pv Qv: 
+match v with
+        | VPtr p n => Pv p n
+        | _ => Qv
+        end
+<->
+(exists p n, v = VPtr p n /\ Pv p n) \/
+ ((forall p n, v <> VPtr p n) /\ Qv).
+Proof.
+case cv : v => [b|i| p sz|]. 
+- split.
+  + move => Q_v.
+    right.
+    split.
+    intros.
+    discriminate.
+    exact Q_v.
+  + move => disj_ptr.
+    destruct disj_ptr as [H | H1].
+    destruct H as [x [sz [H1 H2]]].
+    discriminate H1.
+    destruct H1 as [H Q_v].
+    exact Q_v.
+- split.
+  + move => Q_v.
+    right.
+    split.
+    intros.
+    discriminate.
+    exact Q_v.
+  + move => disj_ptr.
+    destruct disj_ptr as [H | H1].
+    destruct H as [x [sz [H1 H2]]].
+    discriminate H1.
+    destruct H1 as [H Q_v].
+    exact Q_v.
+- split.
+  + move => Pv_p.
+    left.
+    exists p, sz.
+    split.
+    reflexivity.
+    exact Pv_p.
+  + move => H.
+    destruct H as [v_ptr | v_not_ptr].
+    * destruct v_ptr as [p0 [n [H Pv_p0]]].
+      injection H.
+      move => sz_n p_p0.
+      rewrite <- sz_n in Pv_p0.
+      rewrite <- p_p0 in Pv_p0.
+      exact Pv_p0. 
+    * destruct v_not_ptr as [contr Q_v].
+      specialize (contr p sz).
+      exfalso.
+      apply contr.
+      reflexivity.
+- split.
+  + move => Q_v.
+    right.
+    split.
+    intros.
+    discriminate.
+    exact Q_v.
+  + move => disj_ptr.
+    destruct disj_ptr as [H | H1].
+    destruct H as [x [sz [H1 H2]]].
+    discriminate H1.
+    destruct H1 as [H Q_v].
+    exact Q_v.
+Qed.
+
+Lemma frame_conds_if_then_else:
+  forall wi wo_t wo_f e b ct cf, 
+    exp_triple (lift_sc_seq_ptr_in_heap wi) 
+               e
+               (fun v => v == VBool b) ->
+    fc_triple ct wi wo_t ->
+    fc_triple cf wi wo_f ->     
+    fc_triple_weaken_post (If e ct cf) wi wo_t (lift_sc_seq_ptr_in_heap wo_f).
+Proof. 
+move => wi wo_t wo_f e b ct cf exp_triple fc_t fc_f.
+unfold fc_triple in fc_t, fc_f.
+apply (@if_then_else_rule_g (names wo_t) (names wo_f)).
+- apply Precond_finsupp.
+- apply Precond_finsupp.
+- move => s k varscr_in_ls precond.
+  destruct precond as [ev_e precond].
+  case ev_c : (eval_com ct s k) => [rs||].
+    + move => A finsupp_st_true.
+      specialize (fc_t s k varscr_in_ls precond).
+      rewrite ev_c in fc_t.
+      specialize (fc_t A finsupp_st_true).
+      exact fc_t.
+    + specialize (fc_t s k varscr_in_ls precond).
+      rewrite ev_c in fc_t.
+      exact fc_t.
+    + exact I. 
+- move => s k varscr_in_ls precond.
+  destruct precond as [ev_e precond].
+  case ev_c : (eval_com cf s k) => [rs||].
+    + move => A finsupp_st_false.
+      specialize (fc_f s k varscr_in_ls precond).
+      rewrite ev_c in fc_f.
+      specialize (fc_f A finsupp_st_false).
+      exact fc_f.
+    + specialize (fc_f s k varscr_in_ls precond).
+      rewrite ev_c in fc_f.
+      exact fc_f.
+    + exact I. 
+Qed.
+
+Lemma frame_conds_seq:
+  forall wi w1 wo c1 c2,
+  fc_triple c1 wi w1 ->
+  fc_triple c2 w1 wo ->      
+  fc_triple (Seq c1 c2) wi  wo.
+Proof.
+move => wi w1 wo c1 c2 fc_c1 fc_c2.
+unfold fc_triple.
+apply (@sequencing_rule _ (lift_sc_seq_ptr_in_heap w1) _ _ _ _ (names w1) (names wo)).
+- apply Precond_finsupp. 
+- apply Precond_finsupp.
+- unfold fc_triple in fc_c1.
+  exact fc_c1.
+- unfold fc_triple in fc_c2.
+  exact fc_c2.
+Qed.
+
+End Derived_rules.
+
+(* Additional derived rules for allocation, local-store assertions, and free. *)
+Section Derived_rules_extensions.
+
 (* Allocation introduces a fresh name, so its output footprint cannot be
-   fixed in advance as in frame_conds_as_triple. Keep the fresh name
+   fixed in advance as in fc_triple. Keep the fresh name
    existentially bound, together with the pointer returned in x. The block
    footprint is {(i, 0), ..., (i, sz - 1)} (empty when sz = 0). *)
 Definition allocation_post x sz (wi : {fset ptr}) (s : state) : Prop :=
@@ -343,194 +586,13 @@ move => A supported_post; apply pbindrE0; split.
   exact dom_s.
 Qed.
 
-Lemma frame_conds_as_triple_skip: 
-  forall wi wo, wi = wo -> frame_conds_as_triple Skip wi wo.
-Proof.
-unfold frame_conds_as_triple.
-move => wi wo eq_wi_wo.
-rewrite eq_wi_wo.
-apply skip_rule.
-Qed.
-
-Lemma frame_conds_as_triple_assn: 
-forall wi wo x e,
-  wi = wo
-  -> frame_conds_as_triple (Assn x e) wi wo.
-Proof.
-move => wi wo x e eq_wiwo.
-unfold frame_conds_as_triple.
-apply (@consequence_rule (Assn x e) (names wo) (fun s => (lift_sc_seq_ptr_in_heap wi) (setm s.1 x (eval_expr true e s.1), s.2)) (lift_sc_seq_ptr_in_heap wo)).
-- apply Precond_finsupp.
-- rewrite eq_wiwo.
-  apply assn_rule.
-- move => s H.
-  apply (@fc_triple_heap_depd s (setm s.1 x (eval_expr true e s.1), s.2) wi).
-  reflexivity.
-  exact H.
-- auto.
-Qed. 
-
-Lemma frame_conds_load : 
-  forall x e wi wo, wi = wo 
-    -> exp_triple (lift_sc_seq_ptr_in_heap wi) 
-                  e
-                  (fun v => forall p sz, v == VPtr p sz -> p \in wi)
-    -> frame_conds_as_triple (Load x e) wi wo.
-Proof.
-move => x e wi wo eq_wi_wo expr_triple. 
-unfold frame_conds_as_triple.
-move => ss k varsc_subset precond.
-unfold exp_triple in expr_triple.
-case ck : k => [|n].
-  - simpl; exact I.
-  - simpl.
-    case ev_e : (eval_expr true e ss.1) => [||p sz|].
-      - by [].
-      - by []. 
-      - specialize (expr_triple ss precond (VPtr p sz) ev_e p sz).
-        specialize (expr_triple (eqxx (VPtr p sz))).
-        assert (domm_ss2_eq := precond).
-        apply domm_sepconj_s in domm_ss2_eq.
-        rewrite <- domm_ss2_eq in expr_triple.
-        rewrite <- eq_wi_wo.
-        rewrite <- domm_ss2_eq.
-        move /dommP in expr_triple.
-        destruct expr_triple.
-        rewrite H.
-        move => A H2.
-        apply pbindrE0.
-        rewrite domm_ss2_eq.
-        apply (@fc_triple_domm_heap_depd ss).
-        by simpl.
-        exact precond.
-      by [].
-Qed.
-
-Lemma frame_cond_store : 
-  forall x e wi wo, wi = wo -> 
-    exp_triple (lift_sc_seq_ptr_in_heap wi) 
-                 x
-               (fun v => forall p sz, v == VPtr p sz -> p \in wi) ->
-    frame_conds_as_triple (Store x e) wi wo.
-Proof.
-move => x e wi wo eq_wi_wo expr_triple. 
-unfold frame_conds_as_triple.
-move => ss k varsc_subset precond.
-unfold exp_triple in expr_triple.
-case ck : k => [|n].
-  - simpl; exact I.
-  - simpl.
-    case ev_e : (eval_expr true x ss.1) => [||p sz|].
-      - by [].
-      - by []. 
-      - specialize (expr_triple ss precond (VPtr p sz) ev_e).
-        specialize (expr_triple p sz (eqxx (VPtr p sz))).
-        assert (domm_ss2_eq := precond).
-        apply domm_sepconj_s in domm_ss2_eq.
-        rewrite <- eq_wi_wo.
-        rewrite <- domm_ss2_eq.
-        rewrite <- domm_ss2_eq in expr_triple.
-        move /dommP in expr_triple.
-        destruct expr_triple.
-        unfold updm.
-        rewrite H.
-        simpl.
-        move => A H2.
-        apply pbindrE0.
-        rewrite domm_ss2_eq.
-        apply (@fc_triple_domm_heap_depd ss).
-        simpl.
-        rewrite domm_setm_eq.
-        reflexivity.
-        apply /dommP.
-        exists x0.
-        exact H.
-        exact precond.
-      by [].
-Qed.
-
-Definition singletonm 
-  {T : ordType} (S : Type) (k : T) (v : S) : {fmap T -> S} :=
-  setm emptym k v.
-
-Lemma ptr_match v Pv Qv: 
-match v with
-        | VPtr p n => Pv p n
-        | _ => Qv
-        end
-<->
-(exists p n, v = VPtr p n /\ Pv p n) \/
- ((forall p n, v <> VPtr p n) /\ Qv).
-Proof.
-case cv : v => [b|i| p sz|]. 
-- split.
-  + move => Q_v.
-    right.
-    split.
-    intros.
-    discriminate.
-    exact Q_v.
-  + move => disj_ptr.
-    destruct disj_ptr as [H | H1].
-    destruct H as [x [sz [H1 H2]]].
-    discriminate H1.
-    destruct H1 as [H Q_v].
-    exact Q_v.
-- split.
-  + move => Q_v.
-    right.
-    split.
-    intros.
-    discriminate.
-    exact Q_v.
-  + move => disj_ptr.
-    destruct disj_ptr as [H | H1].
-    destruct H as [x [sz [H1 H2]]].
-    discriminate H1.
-    destruct H1 as [H Q_v].
-    exact Q_v.
-- split.
-  + move => Pv_p.
-    left.
-    exists p, sz.
-    split.
-    reflexivity.
-    exact Pv_p.
-  + move => H.
-    destruct H as [v_ptr | v_not_ptr].
-    * destruct v_ptr as [p0 [n [H Pv_p0]]].
-      injection H.
-      move => sz_n p_p0.
-      rewrite <- sz_n in Pv_p0.
-      rewrite <- p_p0 in Pv_p0.
-      exact Pv_p0. 
-    * destruct v_not_ptr as [contr Q_v].
-      specialize (contr p sz).
-      exfalso.
-      apply contr.
-      reflexivity.
-- split.
-  + move => Q_v.
-    right.
-    split.
-    intros.
-    discriminate.
-    exact Q_v.
-  + move => disj_ptr.
-    destruct disj_ptr as [H | H1].
-    destruct H as [x [sz [H1 H2]]].
-    discriminate H1.
-    destruct H1 as [H Q_v].
-    exact Q_v.
-Qed.
-
 Corollary frame_cond_free_no_ptr: 
   forall e wi wo, 
   exp_triple
     (lift_sc_seq_ptr_in_heap wi)
     e
     (fun v => forall p sz, v <> VPtr p sz)
-  -> frame_conds_as_triple (Free e) wi wo.
+  -> fc_triple (Free e) wi wo.
 Proof.
 move => e wi wo expr_triple s [|k] vars_in_store precond /=;
   first exact I.
@@ -548,7 +610,7 @@ Corollary frame_cond_free_wi_wo:
       exists p sz, 
         v = VPtr p sz /\ p \in wi /\ wo = wi :\: fset1 p 
           /\ fdisjoint (names (fset1 p)) (names (wi :\ p)))
-  -> frame_conds_as_triple (Free e) wi wo.
+  -> fc_triple (Free e) wi wo.
 Proof.
 move => e wi wo expr_triple s [|k] vars_in_store precond /=;
   first exact I.
@@ -593,64 +655,7 @@ apply bool_ext.
   by rewrite in_rest in not_in_rest.
 Qed.
 
-Lemma frame_conds_if_then_else:
-  forall wi wo_t wo_f e b ct cf, 
-    exp_triple (lift_sc_seq_ptr_in_heap wi) 
-               e
-               (fun v => v == VBool b) ->
-    frame_conds_as_triple ct wi wo_t ->
-    frame_conds_as_triple cf wi wo_f ->     
-    frame_conds_as_triple_weaken_post (If e ct cf) wi wo_t (lift_sc_seq_ptr_in_heap wo_f).
-Proof. 
-move => wi wo_t wo_f e b ct cf exp_triple fc_t fc_f.
-unfold frame_conds_as_triple in fc_t, fc_f.
-apply (@if_then_else_rule_g (names wo_t) (names wo_f)).
-- apply Precond_finsupp.
-- apply Precond_finsupp.
-- move => s k varscr_in_ls precond.
-  destruct precond as [ev_e precond].
-  case ev_c : (eval_com ct s k) => [rs||].
-    + move => A finsupp_st_true.
-      specialize (fc_t s k varscr_in_ls precond).
-      rewrite ev_c in fc_t.
-      specialize (fc_t A finsupp_st_true).
-      exact fc_t.
-    + specialize (fc_t s k varscr_in_ls precond).
-      rewrite ev_c in fc_t.
-      exact fc_t.
-    + exact I. 
-- move => s k varscr_in_ls precond.
-  destruct precond as [ev_e precond].
-  case ev_c : (eval_com cf s k) => [rs||].
-    + move => A finsupp_st_false.
-      specialize (fc_f s k varscr_in_ls precond).
-      rewrite ev_c in fc_f.
-      specialize (fc_f A finsupp_st_false).
-      exact fc_f.
-    + specialize (fc_f s k varscr_in_ls precond).
-      rewrite ev_c in fc_f.
-      exact fc_f.
-    + exact I. 
-Qed.
-
-Lemma frame_conds_seq:
-  forall wi w1 wo c1 c2,
-  frame_conds_as_triple c1 wi w1 ->
-  frame_conds_as_triple c2 w1 wo ->      
-  frame_conds_as_triple (Seq c1 c2) wi  wo.
-Proof.
-move => wi w1 wo c1 c2 fc_c1 fc_c2.
-unfold frame_conds_as_triple.
-apply (@sequencing_rule _ (lift_sc_seq_ptr_in_heap w1) _ _ _ _ (names w1) (names wo)).
-- apply Precond_finsupp. 
-- apply Precond_finsupp.
-- unfold frame_conds_as_triple in fc_c1.
-  exact fc_c1.
-- unfold frame_conds_as_triple in fc_c2.
-  exact fc_c2.
-Qed.
-
-End Derived_rules.
+End Derived_rules_extensions.
 
 Section Examples.
 Check triple_impl_leak_freedom.
@@ -672,15 +677,15 @@ Lemma alloc_rule_chr:
     mem_safety_errors.
     Admitted.
     
-Lemma frame_conds_as_triple_alloc: 
+Lemma fc_triple_alloc: 
   forall x e n wi wo, 
     exp_triple (lift_sc_seq_ptr_in_heap wi) 
                 e
                (fun v => v == VNum (Posz n)) 
-    -> frame_conds_as_triple (Alloc x e) wi wo.
+    -> fc_triple (Alloc x e) wi wo.
 Proof.
 move => x e n wi wo expr_triple.
-unfold frame_conds_as_triple.
+unfold fc_triple.
 eapply consequence_rule.
 - admit.
 - unfold exp_triple in expr_triple.
@@ -763,7 +768,7 @@ Check triple_impl_inertia.
 Check frame_ok.
 Corollary no_change_commands_inertia:
   forall (c : com) (wi wo : {fset ptr}),
-    frame_conds_as_triple c wi wo ->
+    fc_triple c wi wo ->
       forall (s : state) (k : nat) (r: {restr state}),
       fsubset (vars_c c) (domm s.1) ->
       fsubset wi (domm s.2) ->
@@ -776,7 +781,7 @@ Admitted.
 
 (* Theorem triple_impl_inertia
 	 : forall (c : com) (fti fto : {fset ptr}),
-       frame_conds_as_triple c fti fto ->
+       fc_triple c fti fto ->
        forall (s : state) (k : nat) (r r' : {restr state}),
        fsubset (vars_c c) (domm s.1) ->
        fsubset fti (domm s.2) ->
@@ -819,13 +824,13 @@ Proof.
 intros.
 unfold fresh_allocation.
   eapply triple_impl_fresh_allocation; eauto.
-  eapply frame_conds_as_triple_skip; eauto. 
+  eapply fc_triple_skip; eauto. 
   simpl. apply fsub0set.
 Qed. 
 
 
 Lemma skip_triple_impl_leak_freedom (fti fto: {fset ptr}):
-  (* frame_conds_as_triple Skip fti fto *)
+  (* fc_triple Skip fti fto *)
   fti = fto
   -> forall s k r1 r,
   fsubset (vars_c Skip) (domm s.1)

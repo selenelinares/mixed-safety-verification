@@ -54,7 +54,7 @@ Definition lift_sc_seq_ptr_in_heap :=
   fun (ws: {fset ptr}) => 
     lift_bop_seq separating_conjunction lift_pred_seq_ptr_in_heap ws.
 
-Definition frame_conds_as_triple c (wi wo : {fset ptr}) :=
+Definition fc_triple c (wi wo : {fset ptr}) :=
  mem_safe_triple 
  (lift_sc_seq_ptr_in_heap wi)
  c

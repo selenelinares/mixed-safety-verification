@@ -1045,13 +1045,13 @@ Qed.
 Lemma valid_postcond_from_fctriple (c : com) (wi wo : {fset ptr}) : 
   forall k s1 (s1': {restr state}),
     fsubset (vars_c c) (domm s1.1)   
-    -> frame_conds_as_triple c wi wo
+    -> fc_triple c wi wo
     -> lift_sc_seq_ptr_in_heap wi s1
     -> eval_com c s1 k = Done s1'
     -> pbindr (names wo) (lift_sc_seq_ptr_in_heap wo) s1'.
 Proof.
 move => k s1 s1' varsc_in_s1 cond_as_triple precond eval_com_c_s1.
-unfold frame_conds_as_triple in cond_as_triple.
+unfold fc_triple in cond_as_triple.
 unfold mem_safe_triple in cond_as_triple.
 specialize (cond_as_triple s1 k).
 rewrite eval_com_c_s1 in cond_as_triple.
@@ -1292,7 +1292,7 @@ Qed.
 
 Lemma triple_impl_leak_freedom : 
 forall (c : com) (fti fto: {fset ptr}),
-  frame_conds_as_triple c fti fto
+  fc_triple c fti fto
   -> forall s k r1 r,
   fsubset (vars_c c) (domm s.1)
   -> fsubset fti (domm s.2)
@@ -1324,7 +1324,7 @@ injection ev_com_s_simpl.
 move => r_eq_union.
 destruct ev_com_s_simpl.
 assert (fc_triple_postcond := cond_as_triple).
-unfold frame_conds_as_triple in fc_triple_postcond.
+unfold fc_triple in fc_triple_postcond.
 have fc_triple_precond : lift_sc_seq_ptr_in_heap fti (s.1,
   name_inclusive_submap s.2 (names fti)).
 - rewrite <- fsubset_dom_impl_precond.
@@ -1384,7 +1384,7 @@ Qed.
 
 
 Lemma triple_impl_fresh_allocation (c : com) (fti fto: {fset ptr}): 
-  frame_conds_as_triple c fti fto 
+  fc_triple c fti fto 
   -> forall s k r1 (* r *),
     fsubset (vars_c c) (domm s.1) 
     -> fsubset fti (domm s.2)
@@ -1406,7 +1406,7 @@ assert (ev_com_s_simpl := @frame_ok _
   ).
 destruct ev_com_s_simpl.
 assert (fc_triple_postcond := cond_as_triple).
-unfold frame_conds_as_triple in fc_triple_postcond.
+unfold fc_triple in fc_triple_postcond.
 unfold mem_safe_triple in fc_triple_postcond.
 specialize (fc_triple_postcond (s.1, name_inclusive_submap s.2 (names fti)) k   
   vars_c_in_s fc_triple_precond).
@@ -1454,7 +1454,7 @@ Qed.
   
 
 Lemma triple_impl_inertia (c : com) (fti fto: {fset ptr}):
-frame_conds_as_triple c fti fto
+fc_triple c fti fto
 -> forall s k r r',
 fsubset (vars_c c) (domm s.1)
 -> fsubset fti (domm s.2)
@@ -1486,7 +1486,7 @@ injection ev_com_s_simpl.
 move => r'_eq_union.
 destruct ev_com_s_simpl.
 assert (fc_triple_postcond := cond_as_triple).
-unfold frame_conds_as_triple in fc_triple_postcond.
+unfold fc_triple in fc_triple_postcond.
 have fc_triple_precond : lift_sc_seq_ptr_in_heap fti (s.1,
   name_inclusive_submap s.2 (names fti)).
   rewrite <- fsubset_dom_impl_precond.
